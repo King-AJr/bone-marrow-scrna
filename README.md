@@ -2,6 +2,96 @@
 
 This project performs a full exploratory analysis of **bone marrow single-cell RNA sequencing (scRNA-seq)** data using **Scanpy**, **AnnData**, and **Decoupler**, covering the key stages of a typical scRNA-seq pipeline: data loading, QC, normalization, dimensionality reduction, clustering, and biological interpretation.
 
+## 📁 Files in this Project
+
+* **`bone-marrow-sc-rna.ipynb`** — the main notebook that contains all code, plots, and commentary.
+* **`bone_marrow.h5ad`** — the starting bone marrow dataset (cells × genes).
+* (Optionally) **`result.txt`** — a mapping file from Ensembl gene IDs to gene names (only needed if converting IDs / gene names).
+
+---
+
+## ✅ What I Did: Step-by-Step
+
+### 1. Load the data
+
+* I loaded the `.h5ad` file using Scanpy / AnnData.
+* The dataset contained ~14,783 cells and ~17,374 genes.
+* I inspected both the cell metadata (`obs`) and gene metadata (`var`) to understand what information was present.
+
+### 2. Clean up names
+
+* To avoid any problems later, I made sure that **all gene names and cell barcodes** are unique by running `var_names_make_unique()` and `obs_names_make_unique()`.
+* This ensures downstream functions don’t fail because of duplicate row/column names.
+
+### 3. Quality Control (QC) examinations
+
+* I attempted to mark mitochondrial (MT), ribosomal (RPS / RPL), and hemoglobin (HB) genes by checking gene names.
+* In this dataset, gene identifiers were mostly Ensembl IDs — so those flags remained zero (no matching genes).
+* Then, I looked at distributions of the number of genes detected per cell and total UMI counts:
+
+  * Most cells expressed ~1,000–2,000 genes, suggesting decent complexity per cell.
+  * There was a tail of cells expressing up to ~5,000 genes — these could be doublets or particularly active cells.
+  * UMI counts per cell broadly ranged around 5,000–15,000, with some cells having much higher counts — again, possibly doublets or very active cells.
+
+### 4. Doublet detection & normalization
+
+* I ran a doublet detection algorithm (Scrublet) to flag potentially problematic cells.
+* I saved a copy of the raw counts, normalized the data to equal total counts per cell, and applied log-transformation (`log1p`) to stabilize variance across cells.
+
+### 5. Feature selection — Highly Variable Genes (HVGs)
+
+* I selected the top 1,000 most variable genes across all cells — these are likely to drive meaningful biological variation (lineage differences, activation states, etc.).
+* These HVGs were used for dimensionality reduction and clustering steps.
+
+### 6. Dimensionality reduction & visualization
+
+* I performed PCA (principal component analysis) to compress the data from thousands of genes down to principal components that capture major variation.
+* Then I built a neighbor graph among cells based on PCA — effectively representing which cells are transcriptionally similar.
+* I ran UMAP to embed cells in 2D for visualization. This gave an overview of the cellular landscape in the bone marrow sample.
+
+### 7. Clustering
+
+* Using the neighbor graph, I applied the Leiden community detection algorithm at multiple resolutions. This produced clusters representing putative biological groups (cell types or states).
+
+### 8. Cell-type annotation using marker signatures (Decoupler + PanglaoDB)
+
+* I fetched canonical marker gene sets from PanglaoDB.
+* I re-indexed the gene names in `adata.var` to use the gene symbol column for compatibility.
+* I ran the `dc.mt.ulm()` method to compute a “cell-type activity score” for each cell based on the marker sets.
+* I converted the resulting matrix (`score_ulm`) into a DataFrame and computed the average score per cluster (according to Leiden clustering).
+* For each cluster, I assigned the cell type corresponding to the top-scoring signature.
+* This resulted in a cluster-to-cell-type mapping such as:
+
+  ```text
+  '0': 'Neutrophils',
+  '1': 'Gamma delta T cells',
+  '2': 'Nuocytes',
+  '3': 'NK cells',
+  '4': 'Gamma delta T cells',
+  '5': 'Nuocytes',
+  '6': 'B cells naive',
+  '7': 'Platelets',
+  '8': 'Plasma cells',
+  '9': 'Monocytes'
+  ```
+* I plotted these cell-type assignments on UMAP — giving a first-pass “annotated” bone marrow cellular landscape.
+
+---
+
+## 🧬 Biological Interpretation (So Far)
+
+From this analysis, I reconstructed a plausible bone marrow cellular landscape comprising:
+
+* **Myeloid lineages**: Neutrophils, Monocytes, Macrophages
+* **Lymphoid lineages**: NK cells, γδ T cells, naïve αβ T cells
+* **B-cell lineage**: Naïve B → B cells → Plasma cells
+* **Platelets / megakaryocyte lineage** (or platelet precursors)
+
+The UMAP and clustering suggest not only distinct mature cell types, but also possible **developmental trajectories** (e.g. B-cell maturation, monocyte → macrophage lineage).
+This structure aligns well with known bone marrow biology.
+
+---
+
 ## 1. What cell types did I identify?
 
 From the UMAP and marker-based annotation, I identified the following cell types: Neutrophils, Macrophages, Monocytes, Gamma delta T cells (γδ T cells), NK cells, Naive CD4⁺ T cells, Naive B cells, Mature/activated B cells, Plasma cells, and Platelets.
